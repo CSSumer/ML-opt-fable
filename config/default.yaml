@@ -1,0 +1,75 @@
+# ML-Enhanced Long-Term Portfolio Optimisation — default configuration.
+# Validated by the Pydantic schema in src/config.py. Every field has a
+# sensible default there; this file only needs to override what you change.
+
+data:
+  # Asset universe. "sp500" scrapes the *current* S&P 500 constituent list.
+  # SURVIVORSHIP BIAS: see README — the universe excludes delisted firms.
+  universe: sp500
+  max_tickers: 50            # cap for tractable academic runs; null = all
+  start_date: "2005-01-01"
+  end_date: null             # null = today
+  price_cache_dir: data_cache
+  # ALFRED (ArchivaL FRED) macro series, pulled by vintage date so models
+  # only ever see the value as first published (point-in-time integrity).
+  macro_series:
+    - UNRATE      # unemployment rate (published ~1 month late)
+    - CPIAUCSL    # CPI, all urban consumers
+    - INDPRO      # industrial production index
+    - FEDFUNDS    # effective federal funds rate
+  alfred_api_key_env: FRED_API_KEY
+
+features:
+  momentum_windows: [1, 3, 6, 12]   # months
+  volatility_window: 6              # months of monthly returns
+  rsi_window: 14                    # days (computed on daily prices)
+  ma_windows: [50, 200]             # days
+  cross_sectional_rank: true        # rank-normalise per date to kill scale drift
+
+walkforward:
+  train_window_months: 60
+  purge_gap_months: 1          # >= 1 enforced: forward-return labels overlap t
+  validation_fraction: 0.15    # tail of train window carved out for early stopping
+  validation_purge_gap_months: 1
+  rebalance_frequency: monthly
+
+models:
+  seed: 42
+  xgboost:
+    n_estimators: 300
+    max_depth: 4
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    early_stopping_rounds: 25
+  lstm:
+    sequence_length: 12
+    hidden_size: 32
+    num_layers: 1
+    dropout: 0.1
+    epochs: 50
+    batch_size: 256
+    learning_rate: 0.001
+    early_stopping_patience: 5
+  end_to_end:
+    hidden_size: 64
+    epochs: 60
+    learning_rate: 0.001
+    early_stopping_patience: 8
+
+portfolio:
+  max_weight: 0.10
+  cardinality_k: 15            # top-k assets for the cardinality optimiser
+  risk_free_rate_annual: 0.02  # used in Sharpe/Sortino; non-zero on purpose
+  transaction_cost_bps: 10.0   # deducted per unit of turnover
+
+evaluation:
+  bootstrap_samples: 2000
+  confidence_level: 0.95
+  multiple_testing: holm       # holm | bonferroni | none
+  benchmark: histmean_sample_equal
+
+runner:
+  use_subprocess: true         # isolate torch/xgboost (macOS libomp clash)
+  subprocess_timeout_seconds: 3600
+  results_dir: results
